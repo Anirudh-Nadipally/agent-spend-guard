@@ -1,0 +1,38 @@
+{
+  "name": "agent-spend-guard",
+  "version": "0.0.1",
+  "description": "Fail-closed spend guard for AI agents, built against a local mock of Saifuro's documented authorization API.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "bin": {
+    "agent-spend-guard-mcp": "dist/src/mcp/stdio.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "eval": "tsx evals/retry-after-deny/run-scripted.ts",
+    "eval:models": "tsx evals/retry-after-deny/run-models.ts",
+    "mcp": "tsx src/mcp/stdio.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "ai": "^7.0.153",
+    "jose": "^6.2.13",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@ai-sdk/anthropic": "^4.0.88",
+    "@ai-sdk/azure": "^4.0.110",
+    "@ai-sdk/openai": "^4.0.102",
+    "@types/node": "^22.20.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}
