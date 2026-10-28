@@ -105,6 +105,7 @@ export class MockEngine implements SaifuroClient {
     if (opts.idempotencyKey && this.idempotency.has(opts.idempotencyKey)) {
       return this.idempotency.get(opts.idempotencyKey)!;
     }
+    if (!Number.isFinite(req.amount) || req.amount <= 0) throw new Error('400 invalid_request: amount must be positive');
     const agent = this.agent; // agent key: the agent is taken from the key, req.agent is ignored
     const now = this.now();
     const velocityExceeded = this.recentDecisions(agent, now) >= VELOCITY_MAX;

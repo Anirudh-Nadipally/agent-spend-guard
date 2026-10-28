@@ -30,7 +30,7 @@ So `guardedPay` adds a **session circuit breaker**. After any non-allow (a deny 
 | MockEngine | `src/core/mock-engine.ts` | The documented check order, rolling 30-day `per_month`, fixed velocity (11th decision in 60 s), `review_above` with approve/deny, 5-minute allow expiry, ES256 tokens with kid `sandbox-local`, local JWKS, idempotency |
 | HttpClient | `src/core/http-client.ts` | `POST /v1/authorizations` with `Idempotency-Key`. **Untested against the real API** |
 | Verifier | `src/verify/verify.ts` | Every check the [verify-a-verdict](https://docs.saifuro.com/reference/verify-a-verdict) page lists, plus a nonce store |
-| Guard | `src/guard/guarded-pay.ts`, `circuit-breaker.ts` | Pays only on a verified allow. Fails closed, holds reviews, blocks split retries, lets payments through in observe mode |
+| Guard | `src/guard/guarded-pay.ts`, `circuit-breaker.ts` | Pays only on a verified allow. Fails closed, holds reviews, blocks split retries (also when fired in parallel), rejects non-positive amounts, passes one idempotency key to the authorization and the rail, and reports a payment that fails mid-flight instead of throwing, closing that payee until a human reconciles. Lets payments through in observe mode |
 | AI SDK adapter | `src/adapters/vercel-ai.ts` | `withSpendGuard(tool, cfg)` wraps any AI SDK tool. A refusal comes back as a result the model can read |
 | MCP server | `src/mcp/server.ts`, `stdio.ts` | A `request_spend_authorization` tool for any MCP client, with the same breaker |
 | Eval | `evals/retry-after-deny/` | Five scenarios, a prompt_only arm and a guard_on arm, scripted agents, an optional model runner, and deterministic scoring |
@@ -106,6 +106,16 @@ Real models: `npm run eval:models` runs the same scenarios through the AI SDK fo
 - **The verifier has been checked against one real artifact:** the sample token on the docs page, against the live published JWKS (`NETWORK_TESTS=1 npx vitest run test/docs-token.network.test.ts`). The signature verifies with the clock pinned, and the token is then rejected at the currency check, as the docs say it should be. CI skips this test so CI stays offline.
 - **Model results exist only when run.** No model numbers are claimed here. `evals/RESULTS.md` contains scripted agents only.
 - No latency is claimed.
+
+## Known limitations
+
+- **Breaker and nonce state are in-process memory.** A restart clears them, and two instances do not share them. The per-recipient/category lock is in-process too. Production needs shared stores (e.g. Redis `SET NX PX` for nonces and an atomic lock per key); the `NonceStore` interface is ready for that, the breaker store is not yet.
+- **The breaker is deliberately blunt.** Any non-allow, including `deny_velocity`, closes the recipient and the category until a human clears them. It cannot tell a retry from a new, legitimate purchase. This trades false positives for no structuring; scoping by intent or time window is an open design choice.
+- **An allow is spent at authorization, not at settlement.** If the rail fails, the mock still counts the allow toward `per_month`. A `pay_outcome_unknown` result needs reconciling with the rail by its idempotency key before anything is retried.
+- **Only a thrown `PaymentDeclinedError` counts as "no money moved".** Every other failure is treated as unknown, on purpose.
+- **Observe mode does not verify the token** and never trips the breaker, because it pays regardless.
+- **The deal check covers amount, currency and recipient**, exactly and case-sensitively, so float drift fails closed. Category is not part of it.
+- **The eval adversaries are scripted**, not adaptive. They do not search for new bypasses.
 
 ## License
 

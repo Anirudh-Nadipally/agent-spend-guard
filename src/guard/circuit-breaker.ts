@@ -17,6 +17,8 @@ export interface Trip {
 
 export class CircuitBreaker {
   private trips = new Map<string, Trip>();
+  /** Per-key queue tails: the promise the next request on that key must wait for. */
+  private tails = new Map<string, Promise<void>>();
 
   constructor(
     private readonly scopes: BreakerScope[] = ['recipient', 'category'],
@@ -39,6 +41,28 @@ export class CircuitBreaker {
   trip(req: { recipient: string; category: string }, verdict: string, reason: string): void {
     for (const key of this.keys(req)) {
       if (!this.trips.has(key)) this.trips.set(key, { key, verdict, reason, at: this.now() });
+    }
+  }
+
+  /**
+   * Runs `fn` with this request's recipient and category keys held, so check -> authorize -> pay
+   * is one step per key. Without it, a $720 and two $360s fired in parallel all pass check()
+   * before the deny comes back to trip(). Unrelated keys still run in parallel.
+   * Waiting on every previous tail at once (registered synchronously) means no lock-order deadlock.
+   * In-process only: several instances need a shared lock (e.g. Redis) instead.
+   */
+  async withLock<T>(req: { recipient: string; category: string }, fn: () => Promise<T>): Promise<T> {
+    const keys = [...new Set(this.keys(req))];
+    let release!: () => void;
+    const mine = new Promise<void>((r) => { release = r; });
+    const previous = keys.map((k) => this.tails.get(k));
+    for (const k of keys) this.tails.set(k, mine); // mine resolves only after every previous holder released
+    try {
+      await Promise.all(previous);
+      return await fn();
+    } finally {
+      release();
+      for (const k of keys) if (this.tails.get(k) === mine) this.tails.delete(k); // nobody queued behind us
     }
   }
 
